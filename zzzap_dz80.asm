@@ -10,7 +10,7 @@
 				;; 2021					= Coin flag?
 				;; 2022					= Game state (D7 set = do big gfx?)
 				;; 2023					= ??
-				;; 2025-2026		= ??
+				;; 2s025-2026		= ??
 				;; 2027-2028		= Pointer to 5-byte tables?
 				;; 2029-202A		= Previous score
 				;; 202B-202C		= High score
@@ -21,6 +21,7 @@
 				;; 2036					= ??
 				;; 2037					= ??
 				;; 2039					= ?? (Copied to $204A)
+				;; 203B-203C		= 16b value?
 				;; 203D-203E		= Player score
 				;; 203F					= Countdown timer
 				;; 2040					= Countdown timer
@@ -29,14 +30,19 @@
 				;; 2044					= Bonus time
 				;; 2045					= IN0 store
 				;; 2046					= IN1 store
-				;; 204A					= ?? (Coped from $2039, tested at $100f)
+				;; 2047-2048		= ??
+				;; 2049-204A		= ?? (Coped from $2039, tested at $100f)
 				;; 204B					= Down counter?
 				;; 204D-204E		= Pointer?
 				;; 2054					= ??
 				;; 2055					= Big gfx shift
 				;; 2056-2057		= Big gfx loc offset
 				;; 2058-2059		= Big gfx loc store
+				;; 2051					= ??
 				;; 205B-2062		= 8-byte table (Table of messages?)
+				
+				;; 213E					= (Compared to $213F)
+				;; 213F					= ??
 				;; 2143					= Counts $03, $02, $01, $00, (action on reset)
 
 				;; rst $00
@@ -73,6 +79,10 @@
 
 				;; "4" byte table for $0bed
 				;; Extended time (0x03 = None)
+				;; 00 = 2.5
+				;; 01 = 3.0
+				;; 10 = 2.0
+				;; 11 = e.1 (never)
 001d: 25 30 20
 
 				;; rst $20
@@ -1239,7 +1249,7 @@
 05c1: 33        inc  sp
 05c2: 03        inc  bc
 05c3: fc 00 33  call m,$3300
-05c6: 03        inc  bc
+05c6: 03        inc  bc	
 05c7: 7c        ld   a,h
 05c8: 00        nop
 05c9: cc 00 30  call z,$3000
@@ -2848,7 +2858,7 @@
 0f90: c9        ret
 		
 				;; Called from rst $30 and elsewhere
-				;; Dump calling address if a matches spot in table
+				;; a:	high 3 bits = loc, low 5 bits = string #
 0f91: c5        push bc
 0f92: f5        push af
 0f93: 07        rlca
@@ -2862,9 +2872,10 @@
 0f9f: f1        pop  af
 0fa0: c1        pop  bc
 0fa1: be        cp   (hl)								; Compare to table 
-0fa2: c0        ret  nz
+0fa2: c0        ret  nz									; Different string!
+				 
 0fa3: e1        pop  hl									; Throw away last calling address 
-0fa4: c9        ret
+0fa4: c9        ret											; (Exit rst $30) 
 
 				;; Crash string table
 0fa5: 50 4f 57 3f								; DATA POW_
@@ -3002,6 +3013,7 @@
 1075: e6 3f     and  $3F
 1077: c6 20     add  a,$20
 1079: c3 62 10  jp   $1062
+				
 107c: 03        inc  bc
 107d: 03        inc  bc
 107e: 00        nop

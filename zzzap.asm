@@ -5,33 +5,51 @@
 				;;
 
 				;; Memory
-				;; 2009-2012		= PRNG?
+				;; 2000-2001		= "Car" location -- shifts pylons
+				;; 2002					= ??
+				;; 2003					= ?? Index into $2245 table
+				;; 2004-2005		= ?? ($2000-2001) + offset stored here
+				;; 2006					= ??
+				;; 2007					= ??
+				;; 2008					= ??
+				;; 2009-200C		= PRNG?
 				;; 2020					= IN0 store for IRQ
 				;; 2021					= Coin flag?
 				;; 2022					= Game state (D7 set = do big gfx?)
-				;; 2023					= ??
+				
+				;; 2023					= 
+				
+				;; 2024					= Toggles $00/$01 in IRQ
 				;; 2025-2026		= Pointer to 5-byte tables for pylons
 				;; 2027-2028		= Pointer to 5-byte tables for pylons
 				;; 2029-202A		= Previous score
 				;; 202B-202C		= High score
-				;; 202D					= Write value for when 202E hits $00
+				;; 202D					= Write value for audio port too (when 202E hits $00)
 				;; 202E					= Timer for audio port 2
 				;; 202F					= Coins
 
-				;; 2032					= ??
-				;; 2035					= ?? (Incremented on crash)
+				;; 2032-2033		= Score in hex
+				;; 2034					= Counts down from 00
+				;; 2035					= # of crashes
+
+				;; 4 bytes set together in $1037?
 				;; 2036					= ??
 				;; 2037					= ??
+				;; 2038					= ??
 				;; 2039					= ?? (Copied to $204A)
-				;; 203D-203E		= Player score
+				
+				;; 203A					= Steering value ($3F-$C0)
+				
+				;; 203B-203C		= Pointer?
+				;; 203D-203E		= Score in BCD
 				;; 203F					= Countdown timer
 				;; 2040					= Countdown timer
 				;; 2041					= Countdown timer
 				;; 2042					= Game time
 				;; 2044					= Bonus time
-				;; 2045					= IN0 store
-				;; 2046					= IN1 store
-				;; 204A					= ?? (Coped from $2039, tested at $100f)
+				;; 2045					= IN0 store (Inputs)
+				;; 2046					= IN1 store (Steering)
+				;; 2049-204A		= ?? (Coped from $2039, tested at $100f)
 
 				;; 9-byte structure?
 				;; 204B					= Down counter?
@@ -48,8 +66,17 @@
 				;; 2056-2057		= Big gfx loc offset
 
 				;; 2058-2059		= Big gfx loc store
-				;; 205B-2062		= 8-byte table (Table of messages?)
+				
+				;; 205a					= ?? (added to $213E?)
+				
+				;; 205B					= Loc 0 string ( $2400 = Top of screen )
+				;; 205C					= Loc 1 string ( $3840 = 3 from bottom )
+				;; 205D					= Loc 2 string ( $3ac0 = 2 from bottom )
+				;; 205E					= Loc 3 string ( $3ca0 = 1 from bottom )
+				;; 205F					= Loc 4 string ( $3e80 =        bottom )
 
+				;; 2060-2061		= Pointer to pylon?
+				
 				;; 5-byte Pylon table
 				;; 0		= Width (0 = inactive);
 				;; 1		= Height
@@ -59,10 +86,22 @@
 				;; 2062-20CF		= $16 x 5 byte pylon table (initial $2027)
 				;; 20D0-213D		= $16 x 5 byte pylon table (initial $2025)
 
+				;; 213E					= Current speed (hex)
+				;; 213F					= ?? (Sets $50 at start)
+				;; 2141					= ??
+				;; 2142					= Current speed thermometer
+				
 				;; 2143					= Counts $03, $02, $01, $00, (action on reset)
-				;; 2144-2243		= ??
 
-				;; 2400-3FFF		= Visible screen
+				;; 2144					= Seed value for tables ($35)
+
+				;; Road data in $20 byte chunks?
+				;; 2145-2244		= + decoded values
+				;; 2245-2344		= - decoded values
+
+				;; ????-23FF		= Stack
+				
+				;; 2400-3FFF		= (Visible screen)
 
 
 				;; rst $00
@@ -120,8 +159,7 @@ L0020:
 				ret
 
 				;; Garbage
-				dec			(hl)						; DATA
-				nop											; DATA
+				.db			$35, $00				; Garbage?
 
 L0028:
 				;; rst $28
@@ -134,24 +172,26 @@ L002B:
 				.dw			L0414						; $2052-3 (Next pointer)
 
 				;; rst $30
+				;; Update string entry (a&$E0) >> 5
 L0030:
 				ex			(sp),hl
 				ld			a,(hl)					; Grab argument from call
 				inc			hl
 				ex			(sp),hl					; Restore stack pointer
 
-				call		L0F91						; ret if a == spot in table
+				call		L0F91						; Exit if message didn't change
+				
 				ld			(hl),a					; store a in table
 				rst			$18							; Stack regs
-				ld			hl,$205E
-				ld			a,(hl)					; $205F
-				inc			hl
+				ld			hl,$205E				; $205E = String loc 3
+				ld			a,(hl)
+				inc			hl							; $205F = String loc 4
 				or			(hl)
 				and			$1F							; Either string set?
-				jp			z,L005D					; Low 5 bits of $205E,205F clear
+				jp			z,L005D					; Jump if both messages clear
 
-				ld			bc,$1DFF
-				call		L0162						; Write c to $4000 b*32 times
+				ld			bc,$1DFF				;	Bottom d29 lines white
+				call		L0162						; Write c from bottom of screen b*32 times
 
 				ld			hl,$205E
 				ld			a,(hl)
@@ -161,17 +201,17 @@ L0030:
 				call		L0F5E						; String @ loc from a
 				rst			$20							; Unstack regs (and return)
 
-				;; White out bottom 40 rows
+				;; White out bottom 29 lines of screen ( to prepare for string draw )
 L0057:
-				ld			bc,$1DFF
-				jp			L0162						; Write c to $4000 b*32 times
+				ld			bc,$1DFF				;	Bottom d29 lines white
+				jp			L0162						; Write c from bottom of screen b*32 times
 				;; And return
 
 
-				;; Black out bottom 40 lines of screen
+				;; Black out bottom 29 lines of screen
 L005D:
-				ld			bc,$1D00
-				call		L0162						; Write c to $4000 b*32 times
+				ld			bc,$1D00				; Bottom d19 lines black
+				call		L0162						; Write c from bottom of screen b*32 times
 
 				rst			$20							; Unstack regs (and return)
 
@@ -346,68 +386,70 @@ L010A:
 				jp			L0154						; ERROR
 
 L011B:
-				ld			sp,$2400
+				ld			sp,$2400				; Reset stack pointer
 				ld			hl,$280C
 				push		hl
 
 				;; ROM Checksum
-				ld			hl,L0000					; Start address
-				ld			de,L0159					; Bad ROM codes
+				ld			hl,L0000				; Start address
+				ld			de,L0159				; Bad ROM codes
 L0128:
-				ld			bc,$0400					; Count 
-				xor			a									; A=0 
+				ld			bc,$0400				; Count 
+				xor			a								; a=0 
 L012C:
 				add			a,(hl)
-				out			($07),a						; Watchdog
+				out			($07),a					; Watchdog
 				inc			hl
 				dec			c
-				jp			nz,L012C					; Loop for $100
+				jp			nz,L012C				; Loop for $100
 				dec			b
-				jp			nz,L012C					; Loop for $400 bloack 
-				and			a									; Should be zero! 
+				jp			nz,L012C				; Loop for $400 bloack 
+				and			a								; Should be zero! 
 				jp			z,L0146
 
-				ld			a,(de)						; Bad ROM code 
-				ex			(sp),hl						; hl to top of stack
-				ex			de,hl							; de = old stack top
+				ld			a,(de)					; Bad ROM code 
+				ex			(sp),hl					; hl to top of stack
+				ex			de,hl						; de = old stack top
 				push		bc
-				call		L0381							; Draw char from A 
+				call		L0381						; Draw char from A 
 
 				pop			bc
-				ex			de,hl							; hl = old stack top
-				ex			(sp),hl						; Swap back
+				ex			de,hl						; hl = old stack top
+				ex			(sp),hl					; Swap back
 L0146:
-				inc			de								; Next code 
+				inc			de							; Next code 
 				ld			a,h
-				cp			$18								; End of ROMs
-				jp			nz,L0128					; Loop
+				cp			$18							; End of ROMs
+				jp			nz,L0128				; Loop
 
-				pop			hl								; Should still be $280C
+				pop			hl							; Should still be $280C
 				ld			a,l
 				cp			$0C
-				jp			z,L0000						; Reset
+				jp			z,L0000					; Reset
 
 				;; Stop on RAM/ROM Error
 L0154:
-				out			($07),a						; Watchdog
-				jp			L0154							; Spin forever
+				out			($07),a					; Watchdog
+				jp			L0154						; Spin forever
 
 				;; Bad ROM codes
 L0159:
-				.db			$48, $47, $46, $45, $44, $43		; HGFEDC
+				.db			"HGFEDC"				; HGFEDC
 
-				;; Clear screen
+
+				;; Clear screen ($2400-$3FFF)
 L015F:
-				ld			bc,$E000
+				ld			bc,$E000				; 00 pushed E0 times
 
 				;; bc passed in?
 				;; b -> a for loop count
 				;; c -> b for value to write
 L0162:
-				ld			de,$4000		; Address
+				ld			de,$4000				; Address
+				
 				;; de = adddress passed in
 L0165:
-				ld			hl,L0000
+				ld			hl,$0000
 				add			hl,sp						; hl = sp
 				ex			de,hl						; hl = $4000, de = original sp
 				di											; Disable interrtups (since stack gets trashed)
@@ -544,17 +586,18 @@ L03C4:
 
 				;; Draw 4 char string BIG
 				ld			de,$2800				; Screen loc?
-				ld			b,$04						; 4 Chars?
+				ld			b,$04						; 4 Chars
 L03D5:
-				call		L03E2
+				call		L03E2						; Draw 1 big char
 				ld			a,e
 				add			a,$08
-				ld			e,a
-				inc			hl
+				ld			e,a							; de+=8
+				inc			hl							; Next char
 				dec			b
 				jp			nz,L03D5				; Loop
 				ret
 
+				;; Draw 1 char 64x64 for crash
 L03E2:
 				ld			a,(hl)					; Get char
 				rst			$18							; Stack regs
@@ -565,10 +608,10 @@ L03E7:
 				inc			de
 L03EA:
 				rra
-				call		c,L03FA
+				call		c,L03FA					; Draw if bit set
 				inc			hl
 				and			a
-				jp			nz,L03EA
+				jp			nz,L03EA				; No remaining bits set
 				pop			hl
 				inc			h
 				dec			b
@@ -590,6 +633,7 @@ L0404:
 				dec			b
 				jp			nz,L0404
 				rst			$20							; Unstack regs (and return)
+
 
 				;; Flag guy animation control
 L040B:													; 9b table
@@ -646,7 +690,7 @@ L0439:
 #include "zapgfx.asm"
 
 L069D:
-				.db			$E0							; Garbage byte
+				.db			$E0							; Garbage?
 
 				;; Common interrupt routine
 L069E:
@@ -686,6 +730,7 @@ L06BE:
 				jp			L06E0						; rst $10, ($2024)==$00
 
 				;; Return address for IRQs
+				;; Flip $2024 LSB
 L06D2:
 				ld			hl,$2024
 				ld			a,(hl)
@@ -701,6 +746,7 @@ L06DA:
 				pop			af
 				ei
 				ret
+
 
 L06E0:
 				ld			a,($2022)				; Game state
@@ -745,37 +791,44 @@ L06E0:
 				call		L0A33						; Draw small pylon
 
 				call		L08EF
-				ld			a,($213E)
+
+				;; Decrement $2143 timer, reset act on overflow
+				;; Only adjust speed every 4th cycle?
+				
+				ld			a,($213E)				; Speed in hex
 				ld			hl,$2143
 				dec			(hl)
-				jp			p,L076D
+				jp			p,L076D					; Skip if no overflow
 
 				ld			(hl),$03
-				ld			hl,$213E
+				ld			hl,$213E				; Speed in hex
 				ld			a,(hl)
-				inc			hl
+				inc			hl							; hl = $213F
 				cp			(hl)
-				jp			z,L076D
+				jp			z,L076D					; Skip if zero
 
-				jp			c,L0766
+				jp			c,L0766					; Jump if <
 
 				cp			$04
-				jp			nc,L0761
-				xor			a
+				jp			nc,L0761				; a>4
+				xor			a								; a=0
 				jp			L076B
+				
 L0761:
 				sub			$04
 				jp			L076B
+				
 L0766:
 				ld			e,a
 				ld			a,($205A)
 				add			a,e
+				
 L076B:
-				dec			hl
+				dec			hl							; hl = $213E
 				ld			(hl),a
 
 L076D:
-				ld			e,a
+				ld			e,a							; a = ($213E)
 				ld			d,$00
 				ld			hl,($2047)
 				ld			a,h
@@ -790,22 +843,26 @@ L077C:
 				jp			z,L0788
 				add			hl,de
 				ld			($2049),hl
+
+				;; ($203B) +- ($213E)<<4
 L0788:
-				ex			de,hl
-				add			hl,hl						; de*2
-				add			hl,hl						; d3*4
-				add			hl,hl						; d3*8
-				add			hl,hl						; de*16
-				ex			de,hl
+				ex			de,hl						; hl=($213E)
+				add			hl,hl						; hl=($213E)*$02
+				add			hl,hl						; hl=($213E)*$04
+				add			hl,hl						; hl=($213E)*$08
+				add			hl,hl						; hl=($213E)*$10
+				ex			de,hl						; de=($213E)*$10
 				ld			hl,($203B)
 				add			hl,de
 				ld			($203B),hl
+				
 				ld			a,h
 				cpl
 				and			$1F
-				add			a,$40
+				add			a,$40						; a=$40-$5F
 				ld			($2003),a
-				ld			c,d
+				
+				ld			c,d							; What is d?
 				ld			d,$00
 				ld			a,($2037)
 				call		L085C
@@ -830,6 +887,7 @@ L0788:
 				add			a,$0B
 				cp			c
 				jp			nc,L07E8
+				
 				cpl
 				inc			a
 				add			a,c
@@ -838,6 +896,7 @@ L0788:
 				and			$03
 				ld			c,a
 				ld			($2141),a
+				
 				pop			af
 				ld			a,b
 				ld			b,d
@@ -848,6 +907,7 @@ L0788:
 				inc			a
 				ld			c,a
 				jp			L07FF
+				
 L07E8:
 				xor			a
 				ld			($2141),a
@@ -856,34 +916,36 @@ L07E8:
 				and			$07
 				add			a,c
 				ld			a,c
-				ld			a,($203A)
+				ld			a,($203A)				; Steering value
 				call		L085C
-				ld			b,d
+				ld			b,d							; b=d=0?
 				pop			de
 				add			a,d
 				ld			c,a
-				jp			p,L0801
+				jp			p,L0801					; c<$80 = add
 L07FF:
-				ld			b,$FF
+				ld			b,$FF						; 
 L0801:
-				ld			hl,($2000)
-				add			hl,bc
-				ld			($2000),hl
+				ld			hl,($2000)			; Car position
+				add			hl,bc						; bc = delta
+				ld			($2000),hl			; Store
 				ld			a,h
 				and			a
 				jp			z,L0822
+				
 				ld			a,($2022)				; Game state
 				xor			$05
 				jp			z,L081A
 				ld			hl,$2022				; Game state
 				inc			(hl)
 				ret
+				
 L081A:
 				ld			a,h
 				cpl
 				ld			l,a
 				ld			h,$00
-				ld			($2000),hl
+				ld			($2000),hl			; Car position
 L0822:
 				ld			a,l
 				call		L0887						; Complement a if negative
@@ -898,10 +960,10 @@ L0830:
 				pop			af							; Throw away calling address? 
 
 L0831:
-				ld			hl,$2045
+				ld			hl,$2045				; $2045 = IN0 Store
 				in			a,($00)					; IN0
 				ld			(hl),a					; Store IN0 
-				inc			hl
+				inc			hl							; $2046 = IN1 store
 				in			a,($01)					; IN1
 				ld			(hl),a					; Store IN1
 
@@ -933,27 +995,32 @@ L084E:
 				out			($05),a					; Audio Port 2
 				ret
 
-				;; a = index into $116D table
+				;; a = index into $116D table (steering value ($3F-$C0)
 				;; c = index into $122E table
 				;; d should be 0
+				;; Returns b = $116D table entry (steering delta)
+				;; Returns e = $11AE table entry (??)
 L085C:
 				and			a
-				push		af
+				push		af							; Store flags for later
 				call		L0887						; Complement a if negative
+
 				ld			e,a							; e=a
 				ld			hl,L116D
 				add			hl,de						; hl = $116D + a
 				ld			a,(hl)
-				ld			b,a							; Store table value
+				ld			b,a							; Stash table value
+				
 				ld			e,c
-				ld			hl,L122E				; hl = $116D + c
+				ld			hl,L122E				; hl = $122E + c
 				add			hl,de
 				add			a,(hl)
-				jp			p,L087B					; sum positive
+				jp			p,L087B					; Sum positive = get e from $11AE table
 
 				ld			e,d							; e=0
 				cp			$EE
-				jp			c,L0881
+				jp			c,L0881					; a>$EE?
+				
 				inc			e								; e=1
 				jp			L0881
 
@@ -965,11 +1032,13 @@ L087B:
 
 L0881:
 				pop			af							; Use flags for ret p?
-				ld			a,e
-				ret			p
+				ld			a,e							
+				ret			p								; (original) a<$80
+				
+				;; 2's complement if (original) a >=$80
 				cpl
 				inc			a
-				ret
+				ret											
 
 
 				;; Complement a if negative
@@ -1017,12 +1086,15 @@ L088B:
 				ld			($2027),hl
 				ex			de,hl
 				ld			($2025),hl
-				ld			($2060),hl
+
+				ld			($2060),hl			; ??
 				ld			a,$05
 				out			($04),a					; MB14241 Count
 				xor			a
 				out			($03),a					; MB14241 Data
 				ld			a,($2003)
+
+				;; ($2003) is probably $00-$1f, so this is done 8 times
 L08E1:
 				call		L090D
 
@@ -1037,52 +1109,64 @@ L08EF:
 				ld			hl,($2060)
 				ld			a,h
 				or			l
-				ret			z
+				ret			z								; Nothing to do
+				
 				ld			a,$05
 				out			($04),a					; MB14241 Count
 				xor			a
 				out			($03),a					; MB14241 Data
+
+				;; Do ?? with a=$00-$1F
 				ld			hl,$2003
 				ld			a,(hl)
-				and			$1F
-				ld			(hl),a
+				and			$1F							; Mask low 5 bits
+				ld			(hl),a					; Store
 				call		L090D
+
+				;; Do again with a=$20-2F
 				ld			hl,$2003
 				ld			a,(hl)
-				add			a,$20
+				add			a,$20						; a=$20-$3F
 				ld			(hl),a
 
 L090D:
 				ld			c,a
 				ld			b,$00
-				ld			hl,$2145
+				ld			hl,$2145				; Use top half of table $2145-$2244
 				add			hl,bc						; hl=$2145+a
 				ld			c,(hl)
 				ld			a,($2002)
-				add			a,c
+				add			a,c							; a = ($2002)+(hl)
 				and			a
-				jp			p,L092B
+				jp			p,L092B					; a>0, get l from $11AE table
 
 				cp			$EE
 				jp			nc,L0926
 
-				ld			l,b
+				;; a = ($EE-$FF) --> l=0
+				ld			l,b							; l=b=0
 				jp			L0931
 
+				;; a = ($80-$ED) --> l=1
 L0926:
 				ld			l,$01
 				jp			L0931
 
+
+				;; Get l from $11AE table
 L092B:
 				ld			c,a
 				ld			hl,$11AE
 				add			hl,bc
 				ld			l,(hl)
+
 L0931:
-				ld			h,b
+				ld			h,b							; h=b=0
 				ld			a,($2037)
 				and			a
-				jp			p,L093F
+				jp			p,L093F					; a>0
+
+				;; hl = -hl
 				xor			a
 				sub			l
 				ld			l,a
@@ -1090,15 +1174,16 @@ L0931:
 				sbc			a,h
 				ld			h,a
 L093F:
-				ex			de,hl
-				ld			hl,($2000)
+				ex			de,hl			
+				ld			hl,($2000)			; Car position
 				add			hl,de
 				ld			($2004),hl
+				
 				ld			a,($2003)
 				ld			c,a
-				ld			hl,$2245
+				ld			hl,$2245				; Use bottom half of table $2245-$2344
 				add			hl,bc
-				ld			a,(hl)
+				ld			a,(hl)					; Index into table
 				ld			($2008),a
 				ld			d,a
 				ld			a,(hl)
@@ -1354,7 +1439,7 @@ L0A66:
 				xor			a
 				out			($03),a					; MB14241 Data
 
-					;; set c LSBs in a
+				;; set c LSBs in a
 				ld			d,a							; d=0
 				ld			e,c							; e=width
 				ld			hl,L0A94				; ??
@@ -1539,19 +1624,26 @@ L0B52:
 
 					
 				ld			a,a							; Garbage byte? 
-		
+
+				;; Startup code (non test mode)
 L0B61:
-				ld			bc,$FF00
-				ld			sp,$2005
-				call		L0162						; Write c to $4000 b*32 times
-				ld			sp,$2400
-				call		L10AF
+				;; Clear $3FFF down to $2020
+				ld			bc,$FF00				; All screen + $2020-$23FF
+				ld			sp,$2005				; (Temporary so L0162 won't clear it)
+				call		L0162						; Write c from bottom of screen b*32 times
+				
+				ld			sp,$2400				; Reset stack pointer
+				call		L10AF						; Unpack track data (?)
+
+				;; Initialiaze PRNG
 				ld			hl,$FFFF
 				ld			($2009),hl
 				ld			($200B),hl
+				
 				call		L0EB3
 				ei
 				jp			L0E1F
+
 
 L0B80:
 				out			($07),a					; Watchdog
@@ -1595,6 +1687,7 @@ L0B80:
 				and			a
 				jp			z,L0C2A					; Skip if 0
 
+				;; No coin or not enough credits for game
 L0BB8:
 				call		L100F
 				ld			a,($2023)
@@ -1608,21 +1701,25 @@ L0BB8:
 				ld			(hl),$3C
 				ld			hl,$2034
 				dec			(hl)
-				ld			hl,$2042
+				
+				;; Decrement game time
+				ld			hl,$2042				; Game time
 				ld			a,(hl)
-				add			a,$99
+				add			a,$99						; Decrement
 				daa
-				ld			(hl),a
+				ld			(hl),a					; Store
 				jp			nz,L0C0F
+
+				;; Game over?
 				ld			a,($2023)
 				xor			$03
-				jp			z,L0DB6
+				jp			z,L0DB6					; Already did extended time = Game over
 
 				in			a,($02)					; IN2
-				rrca
-				rrca
-				rrca
-				and			$06							; Was bits 5,4
+				rrca										; 07654321
+				rrca										; 10765432
+				rrca										; 12076543
+				and			$06							; D5=extended time, D4=2.0, not 2.5
 				ld			c,a
 				ld			b,$00
 				ld			hl,L001D				; Index into table 
@@ -1638,13 +1735,16 @@ L0BB8:
 				rrca
 				rrca
 				cp			c								; Compare to table value 
-				jp			c,L0DB6
+				jp			c,L0DB6					; No extra time = Game over
+				
 				ld			a,$03
-				ld			($2023),a
-				ld			a,($2044)
-				ld			($2042),a
-				rst			$30
-				.db			$81							; Argument for rst $30
+				ld			($2023),a				; Mark extended time
+				
+				ld			a,($2044)				; Extended time
+				ld			($2042),a				; Game time
+
+				rst			$30							; Write string table entry
+				.db			$81							; Loc 4, string 1 ("EXTENDED TIME")
 
 L0C0F:
 				call		L0FF1						; Update time
@@ -1697,10 +1797,10 @@ L0C43:
 				rrca										; 07654321
 				and			$06							; Mask game time
 				ld			l,a
-				ld			de,$0FD7				; Game time table
+				ld			de,L0FD7				; Game time table
 				add			hl,de
 				ld			a,(hl)					; Get game time
-				ld			($2042),a				; Tore game time
+				ld			($2042),a				; Store game time
 				inc			hl
 				ld			a,(hl)					; Get bonus time
 				ld			($2044),a				; Store bonus time
@@ -1720,12 +1820,12 @@ L0C43:
 				and			$10							; Mask shifter 
 				jp			z,L0C81
 
-				rst			$30							; Add string to table
-				.db			$65							; Argument for rst $30
+				rst			$30							; Write string table entry
+				.db			$65							; Loc 3, string $05 ("SHIFT LOW")
 
 
 L0C81:
-				rst			$28							; (call L0F16)
+				rst			$28							; (call L0F16) Delay time
 				.db			$04							; Data for $0F16
 
 				ld			hl,L040B				; Table address
@@ -1734,7 +1834,7 @@ L0C81:
 				ld			($2054),a
 				ld			a,$FF
 				ld			($2022),a				; Game state
-				rst			$28							; (call L0F16)
+				rst			$28							; (call L0F16) Delay time
 				.db			$E8							; Data for $0F16
 
 L0C95:
@@ -1747,13 +1847,13 @@ L0C95:
 				ld			a,($213E)
 				and			a
 				jp			z,L0CB0
-				call		L0F33
+				call		L0F33						; Write data and timer for audio
 				.db			$04, $00				; Data for $0F33
 
 				jp			L0CB5
 
 L0CB0:
-				call		L0F33
+				call		L0F33						; Write data and timer for audio
 				.db			$00, $00				; Data for $0F33
 
 L0CB5:
@@ -1797,16 +1897,17 @@ L0CC7:
 L0CEB:
 				call		L0FDF						; Update score
 L0CEE:
-				call		L0D77
+				call		L0D77						; Update speedometer gauge
+				
 				ld			a,($2037)
-				call		L0887						; Complement a if positive
+				call		L0887						; Complement a if negative
 				rrca
 				rrca
 				rrca
 				rrca
-				and			$03
-				add			a,$10
-				call		L0F48
+				and			$03							; String $00-$03
+				add			a,$10						; Loc $01
+				call		L0F48						; Rewrite top of screen
 
 				ld			a,($2045)
 				ld			b,a
@@ -1824,36 +1925,37 @@ L0CEE:
 				cp			$28
 				jp			nc,L0D27
 
-				rst			$30
-				.db			$65							; Argument for rst $30
+				rst			$30							; Write string table entry
+				.db			$65							; Loc 3, string $05 ("SHIFT LOW")
 
-				ld			c,$00
+				ld			c,$00						; Value to $213F
 				ld			a,$20
 				out			($02),a					; Sound Port 1
 				jp			L0D4F
+				
 L0D27:
 				ld			a,c
 				rlca
-				ld			c,a
+				ld			c,a							; Value to $213F
 				ld			a,d
 				or			$10
 				out			($02),a					; Sound Port 1
 				ld			a,$01
 				ld			($205A),a
-				rst			$30
-				.db			$60							; Argument for rst $30
+				rst			$30							; Write string table entry
+				.db			$60							; Loc 3, (Clear)
 
 				jp			L0D4F
 L0D39:
 				cp			$28
 				jp			c,L0D43
-				rst			$30
-				.db			$66							; Argument for rst $30
+				rst			$30							; Write string table entry
+				.db			$66							; Loc 3, string $05 ("SHIFT HIGH")
 
 				jp			L0D45
 L0D43:
-				rst			$30
-				.db			$60							; Argument for rst $30
+				rst			$30							; Write string table entry
+				.db			$60							; Loc 3, (Clear)
 
 L0D45:
 				ld			a,d
@@ -1864,82 +1966,98 @@ L0D45:
 L0D4F:
 				ld			a,c
 				ld			($213F),a
-				ld			a,($2046)
-				call		L0D60
+				ld			a,($2046)				; IN1 Steering store
+				call		L0D60						; Limit to $3F-$C0
 				cpl
-				ld			($203A),a
+				ld			($203A),a				; Steering value
 				jp			L0C95
+				
 L0D60:
-				ld			a,($2046)
+				ld			a,($2046)				; IN1 Steering store
 				cpl
-				add			a,$81
+				add			a,$81						; ($7F becomes $00)
 				cp			$81
-				jp			c,L0D71
+				jp			c,L0D71					; <$81
 				cp			$C0
-				ret			nc
-				ld			a,$C0
+				ret			nc							; <=$C0 = OK
+				ld			a,$C0						; Limit to $C0
 				ret
 L0D71:
 				cp			$40
-				ret			c
-				ld			a,$3F
+				ret			c								; >$40 = OK
+				ld			a,$3F						; Limit to $3F
 				ret
+
+
+				;; Update speedometer gauge (if needed)
 L0D77:
 				ld			a,($213E)
+
+				;; Do some funny math
 				ld			b,a
-				rrca
-				rrca
-				rrca
-				and			$1F
+				rrca										; 07654321
+				rrca										; 10765432
+				rrca										; 21076543
+				and			$1F							; a = +($213E)/8
 				cpl
-				inc			a
-				add			a,b
+				inc			a								; a = -($213E)/8
+				add			a,b							; a =~ 7/8 of ($213E)
 				ld			hl,$2142
 				cp			(hl)
-				ret			z
+				ret			z								; Nothing to do
+				
 				jp			c,L0D8F
+
+				;; <($2042) -> increment
 				inc			(hl)
 				jp			L0D90
 L0D8F:
+
+				;; >($2042) -> decrement
 				dec			(hl)
 L0D90:
-				ld			a,(hl)
+				ld			a,(hl)					; a = ($2142)
 				rrca
 				rrca
 				rrca
-				and			$1F
+				and			$1F							; a = ($2142)/8
 				add			a,$A5
-				ld			e,a
-				ld			d,$39
+				ld			e,a							; Screen loc LSB
+				ld			d,$39						; Screen loc MSB
+
+				;; Fractional part to thermometer code
 				ld			a,(hl)
 				and			$07
 				ld			c,a
 				ld			b,$00
-				ld			hl,L0A95
+				ld			hl,L0A95				; Walking bits table
 				add			hl,bc
 				ld			a,(hl)
 				cpl
-				ex			de,hl
-				ld			c,$1F
-				ld			de,$04FF
+				ex			de,hl						; hl = Screen loc
+				ld			c,$1F						; bc = $001F = Row increment - 1
+				ld			de,$04FF				; d = 4 fows, e = $FF (white)
 L0DAD:
-				ld			(hl),a
+				ld			(hl),a					; Draw fractional byte
 				inc			hl
-				ld			(hl),e
-				add			hl,bc
+				ld			(hl),e					; Draw white byte
+				add			hl,bc						; Next row
 				dec			d
 				jp			nz,L0DAD
 				ret
 
-L0DB6:
-				ld			sp,$2400
+
+L0DB6:													
+				ld			sp,$2400				; Reset stack pointer
 				ld			a,$04
 				ld			($2022),a				; Game state
 				call		L0E4B
 				ld			($2023),a
 				call		L0FF1						; Update time
+
 				call		L0F44
-				.db			$09							; Data for $0F44
+				.db			$09							; Loc $00, string $09 "GAME OVER"
+
 				ld			hl,($202B)			; High score
 				ex			de,hl
 				ld			hl,($203D)			; Player score
@@ -1954,49 +2072,60 @@ L0DB6:
 L0DDF:
 				ld			($202B),hl			; High score
 				call		L0057						; White out bottom 40 rows
-				call		L0F5A
-				.db			$6f							; Data for $0F5A -- Loc 3, String F
 
-				call		L0F5A
-				.db			$84							; Data for $0F5A -- Loc 4, String 4
+				;; "CONGRATULATIONS"
+				call		L0F5A						; Draw string from arg
+				.db			$6f							; Loc $03, string $0F ("CONGRATS")
 
-				rst			$28							; (Call $0F16)
+				;; "NEW RECORD"
+				call		L0F5A						; Draw string from arg
+				.db			$84							; Loc $04, string $04 ("NEW RECORD")
+
+				rst			$28							; (Call $0F16) Delay time
 				.db			$ff							; Data for $0F16
 
 L0DEF:
 				call		L0057						; White out bottom 40 rows
-				call		L0F5A
-				.db			$62							; Data for $0F5A -- Loc 3, String 2
 
-				ld			a,($2034)
+				;; "YOUR RATING"
+				call		L0F5A						; Draw string from arg
+				.db			$62							; Loc $03, string $02 ("YOUR RATING")
+
+				;; bc = -(Game time/2)
+				ld			a,($2034) 
 				ld			c,a
 				ld			b,$FF
-				ld			e,b
-				ld			hl,($2032)
+				ld			e,b							; e = $FF
+
+				;; Crude divide for rank
+				;; Count # of times to add bc to make score negative
+				ld			hl,($2032)			; Score in hex
 L0E00:
 				ld			a,h
 				and			a
-				jp			m,L0E0A
+				jp			m,L0E0A					; Score negative = done
 
 				add			hl,bc
 				inc			e
 				jp			L0E00						; Loop back
 
+				;; Extra rating point if no crashes
 L0E0A:
-				ld			a,($2035)
+				ld			a,($2035)				; Crashes
 				and			a
 				ld			a,e
-				jp			nz,L0E13
+				jp			nz,L0E13				; Skip increment
 
 				inc			a
 L0E13:
+				;; "RATING TEXT"
 				add			a,$94						; Loc 4, String $14+a (rating)
 				call		L0F5E						; String @ loc from a
 
-				rst			$28							; (call		L0F16)
+				rst			$28							; (call	L0F16) Delay time
 				.db			$ff							; Data for $0F16
 
-				rst			$28							; (call		L0F16)
+				rst			$28							; (call	L0F16) Delay time
 				.db			$ff							; Data for $0F16
 
 L0E1C:
@@ -2009,23 +2138,24 @@ L0E24:
 				ld			a,($2030)
 				and			a
 				jp			z,L0E35
+
 				call		L0F44
-				.db			$08							; Data for $0F44
+				.db			$08							; Loc $00, string $08 "PUSH BUTTON"
 
 				jp			L0E39
 
 L0E35:
 				call		L0F44
-				.db			$07							; Data for $0F44
+				.db			$07							; Loc $00, string $07 "INSERT COIN"
 
 L0E39:
-				rst			$28							; (call		L0F16)
+				rst			$28							; (call	L0F16) Delay time
 				.db			$ff							; Data for $0F16
 
 				call		L0F44
-				.db			$0e							; Data for $0F44
+				.db			$0e							; Loc $00, string $0E "DATSUN"
 
-				rst			$28							; (call		L0F16)
+				rst			$28							; (call	L0F16) Delay time
 				.db			$ff							; Data for $0F16
 
 				ld			hl,$2031
@@ -2035,8 +2165,9 @@ L0E39:
 
 
 L0E4B:
-				call		L0F33
+				call		L0F33						; Write data and timer for audio
 				.db			$02, $00				; Data for $0F33
+				
 				ld			a,$02
 				ld			($202D),a				; Audio port 2 default
 				xor			a
@@ -2046,62 +2177,75 @@ L0E4B:
 
 				;; ($2022) == $02
 L0E59:
-				ld			sp,$2400
-				call		L0F33
+				ld			sp,$2400				; Reset stack pointer
+				call		L0F33						; Write data and timer for audio
 				.db			$03, $3c				; Data for $0F33
 
 				call		L03C4						; Draw crash message
 				ld			hl,$2035
-				inc			(hl)
-				call		L0F28
+				inc			(hl)						; Increment crashes
+				call		L0F28						; Wait for audio timer
+				
 				xor			a
 				out			($02),a					; Sound Port 1
-				call		 L0F33
+				call		L0F33						; Write data and timer for audio
 				.db			$02, $0a				; Data for $0F33
 
-				call		L0F28
-				call		L0F33
+				call		L0F28						; Wait for audio timer
+				
+				call		L0F33						; Write data and timer for audio
 				.db			$0a, $50				; Data for $0F33
 
-				call		L0F28
-				call		L0E98
+				call		L0F28						; Wait for audio timer
+				
+				call		L0E98						; Reset screen
+				
 				ld			a,($2023)
 				cp			$01
 				ld			a,$FF
 				jp			z,L0E8D
+				
 				ld			a,$78
 L0E8D:
-				ld			($2040),a
+				ld			($2040),a				; Set timer
+				
 				ld			a,$05
 				ld			($2022),a				; Game state
 				jp			L0C95
 
+				;; Set screen state at beginning of game or afer crash
 L0E98:
-				call		L0EDE
-				call		L0F5A
+				call		L0EDE						; Initial screen setup
+
+				;; Draw SCORE line
+				call		L0F5A						; Draw string from arg
 				.db			$4b							; Data for $0F5A -- Loc 2, String 0B
+
 				call		L0FF1						; Update time
 				call		L0FDF						; Update score
 				ld			a,$01
 				ld			($2022),a				; Game state
 				ld			a,($2023)
 				xor			$03
-				ret			nz
-				rst			$30
-				.db			$81							; Argument for rst $30
+				ret			nz							; $03 = "active, not extended"
+
+				rst			$30							; Write string table entry
+				.db			$81							; Loc $04, string $01 ("EXTENDED TIME")
 
 				ret
 
 L0EB3:
-				call		L0EDE
-				call		L0F5A
-				.db			$43							; Data for $0F5A -- Loc 2, String 03
+				call		L0EDE						; Initial screen setup
 
-				rst			$30
-				.db			$6c							; Argument for rst $30 
+				;; Draw SCORE line
+				call		L0F5A						; Draw string from arg
+				.db			$43							; Loc $02, string $03 ("SCORE")
 
-				rst			$30
-				.db			$8d							; Argument for rst $30 
+				rst			$30							; Write string table entry
+				.db			$6c							; Loc $03, string $0c ("HIGH SCORE")
+
+				rst			$30							; Write string table entry
+				.db			$8d							; Loc $04, string $0d ("PREV SCORE")
 
 				call		L0FDF						; Update score
 				ld			hl,$202B				; High score
@@ -2115,36 +2259,48 @@ L0EB3:
 				ld			a,$50
 				ld			($213F),a
 				ret
+
+
+				;; Initial screen setup
 L0EDE:
 				xor			a
 				ld			($2022),a				; Game state
-				call		L015F						; Clear screen 
-				ld			bc,$14FF
-				ld			de,$3A80
+				call		L015F						; Clear screen
+
+				;; White area near the bottom of the screen
+				ld			bc,$14FF				; d20 lines of $FF
+				ld			de,$3A80				; d44 lines up from the bottom
 				call		L0165						; Write c to de b*16 times.
-				ld			hl,$205A
-				ld			c,$EA
-				xor			a
+
+				;; Clear $205A-2143
+				ld			hl,$205A				; Start loc
+				ld			c,$EA						; Loop counter
+				xor			a								; 1=0
 L0EF4:
 				ld			(hl),a
 				inc			hl
 				dec			c
-				jp			nz,L0EF4
+				jp			nz,L0EF4				; Loop
+				
 				ld			a,$01
 				ld			($205A),a
-				ld			hl,$2062
-				ld			($2027),hl
-				ld			hl,$20D0
-				ld			($2025),hl
-				ld			hl,$0080
-				ld			($2000),hl
-				call		L0F5A
-				.db			$2a							; Data for $0F5A -- Loc 1, String 0A
+				ld			hl,$2062				; Initial pylon table
+				ld			($2027),hl			; Initial pylon table
+				ld			hl,$20D0				; Initial pylon table
+				ld			($2025),hl			; Initial pylon table
+				ld			hl,$0080				; Center
+				ld			($2000),hl			; Car position
+
+				;; Draw speedometer
+				call		L0F5A						; Draw string from arg
+				.db			$2A							; Loc $01, string $0A (Speedometer)
 
 				ret
 
-				;; Get argument from call
+
 				;; Actual rst $28
+				;; Get argument from call
+				;; Write timer and do L0B80 until it clears
 L0F16:
 				ex			(sp),hl
 				ld			a,(hl)
@@ -2159,6 +2315,7 @@ L0F1D:
 				jp			nz,L0F1D
 				ret
 
+				;; Wait for audio timer
 L0F28:
 				call		L0B80
 				ld			a,($202E)				; Audio port 2 timer
@@ -2192,13 +2349,14 @@ L0F44:
 				inc			hl
 				ex			(sp),hl
 
+				;; Clear top of screen message, if changed
 L0F48:
-				call		L0F91
+				call		L0F91						; Return if a matches table
 				ld			(hl),a
 				push		af
-				ld			bc,$0A00
-				ld			de,$2540
-				call		L0165						; Write c to de b*16 times.
+				ld			bc,$0A00				; d10 lines of black
+				ld			de,$2540				; $2400-253F = Top 10 lines
+				call		L0165						; Push c to de b*16 times.
 				pop			af
 				jp			L0F5E						; String @ loc from a
 				;; And return
@@ -2292,10 +2450,10 @@ L0FA5:
 				;; Screen location for phrases?
 L0FC5:
 				.dw			$2400						; Top of screen
-				.dw			$3840						; 
-				.dw			$3ac0						; 
-				.dw			$3ca0						; 
-				.dw			$3e80						; 
+				.dw			$3840						; 3rd from bottom
+				.dw			$3ac0						; 2nd from bottom
+				.dw			$3ca0						; 1st from bottom
+				.dw			$3e80						; Bottom
 
 				;; 2-byte tabke (4 entries) == Coinage
 L0FCF:
@@ -2305,6 +2463,7 @@ L0FCF:
 				.db			$02, $03				; 2 coin, 3 credit
 
 				;; 2-byte tabke (4 entries) == Game time
+L0FD7:	
 				.db			$80, $40				; 80 + 40 ext
 				.db			$01, $01				; Test mode
 				.db			$99, $50				; 99 + 50 ext
@@ -2336,6 +2495,8 @@ L0FF1:
 				nop
 
 				;; Index into language table
+				;; hl = table
+				;; Returns de = entry
 L1000:
 				in			a,($02)					; IN2
 				rlca										; 65432107
@@ -2354,12 +2515,13 @@ L100F:
 				ld			a,($204A)
 				and			a
 				ret			m
+				
 				ld			hl,$2036
 				ld			b,(hl)
 				ld			a,(hl)
 				inc			hl							; $2037
 				cp			(hl)
-				jp			z,$1037					; Jump if zero
+				jp			z,L1037					; Jump if ($2036 == $2037)
 				xor			(hl)						; a = ($2036) ^ ($2037)
 				ld			a,b							; a = ($2036)
 				jp			m,$102B					; D7 different
@@ -2384,69 +2546,72 @@ L1030:
 
 
 L1037:
-				inc			hl
+				inc			hl							; $2038
 				ld			a,(hl)
 				and			a
 				jp			nz,$1027
 
-				ld			b,a
+				ld			b,a							; ($2038)
 				ld			a,($2023)
 				ld			c,a
 				rlca
-				add			a,c
-				ld			c,a
-				ld			hl,$107C
-				add			hl,bc
-				ld			de,$2036
+				add			a,c							; a=($2023)*3
+				ld			c,a							; c=($2023)*3
+				ld			hl,L107C				; Table, (returns $00-$03)
+				add			hl,bc						; Index into table
+				
+				ld			de,$2036				; ??
 				call		L1088						; Kick PRNG, get #
 				and			$07
-				jp			z,$106F
+				jp			z,L106F
+				
 				call		L1088						; Kick PRNG, get #
-				and			$7F
-				sub			$40
+				and			$7F							; $00-$7F
+				sub			$40							; $C0-$3F
 				ld			(de),a
-				inc			de
-				inc			de
+				inc			de							; $2037
+				inc			de							; $2038
 				call		L1088						; Kick PRNG, get #
-				and			(hl)
+				and			(hl)						; Mask bits 0,1
+				
 L1062:
 				ld			(de),a
-				inc			de
+				inc			de							; $2039
 				inc			hl
 				call		L1088						; Kick PRNG, get #
-				and			(hl)
+				and			(hl)						; Mask bits 0,1
 				inc			hl
 				add			a,(hl)
-				add			a,$FC
+				add			a,$FC						; $FC-$FF
 				ld			(de),a
 				ret
+
 L106F:
 				ld			(de),a
-				inc			de
-				inc			de
+				inc			de							; $2037
+				inc			de							; $2038
 				call		L1088						; Kick PRNG, get #
-				and			$3F
-				add			a,$20
+				and			$3F							; $00-$3F
+				add			a,$20						; $20-$5F
 				jp			$1062
-L107C:
-				inc			bc
-				inc			bc
-				nop
-				inc			bc
-				inc			bc
-				nop
-				inc			bc
-				ld			bc,$0302
-				nop
-				inc			bc
 
-				;; Crappy PRNG?
+
+				;; Table for $1045 ??
+L107C:
+				.db			$03, $03, $00
+				.db			$03, $03, $00
+				.db		  $03, $01, $02
+				.db			$03, $00, $03
+
+
+				;; PRNG?
 L1088:
 				push		hl
 				push		bc
 				ld			hl,$2009
 				ld			b,$08						; Loop counter
 				ld			a,(hl)
+
 L1090:
 				rlca
 				rlca
@@ -2478,26 +2643,31 @@ L1090:
 				ret
 
 
+				;; Write track data?
 L10AF:
 				ld			hl,$2144
-				ld			(hl),$35
+				ld			(hl),$35				; Initial value
+
+				;; Unpack positive delta-encoded data
 				ld			de,L10E7
 				ld			bc,$0040				; b = xor value, c=count
-				call		L10C9
+				call		L10C9						; Unpack + delta-encoded data
+				
 				inc			hl
 				ex			de,hl
 				ld			b,$08
 				call		L0ADF						; Copy (hl) to (de) b times
 				ex			de,hl
-				dec			hl
-				ld			bc,$FF3E				; b = xor value, c=count
 
-				;; Add/subtract values from (de) to (hl);
+				dec			hl
+				;; Unpack negative delta-encoded data
+				ld			bc,$FF3E				; b = xor value, c=count
+				
+				;; Unpack delta-encoded track data
 				;; de = Table of packed 2-bit values
-				;; b  = xor value
-				;; c  = loop counter
+				;; b  = xor value, c  = loop counter
 L10C9:
-				ld			a,(de)
+				ld			a,(de)					; Get 4x 2bit delta encoded value
 				push		de
 				ld			d,$04						; Loop counter (4 packed 2 bit values
 
@@ -2512,48 +2682,61 @@ L10CD:
 
 				inc			a								; 2's complement if negative
 L10D7:
-				add			a,(hl)
-				inc			hl
-				ld			(hl),a
+				add			a,(hl)					; Add delta to last value
+				inc			hl							; Increment
+				ld			(hl),a					; Store value
 				dec			d
 				ld			a,e
 				jp			nz,$10CD				; Loop for byte
 
 				pop			de
-				inc			de
+				inc			de							; Next encoded byte
 				dec			c
 				jp			nz,$10C9				; Loop for table length
 				ret
 
 				push		de							; Garbage byte?
 
-				;; $40 long table -- values added to $2144-$2243
+
+				;; $40 long table
+				;; Delta encoded positive values
+				;; Unpacked $2145-$2244
+				;; $25 = 00 10 01 01 = +0 +2 +1 +1 -> (35) 35 37 38 39
 L10E7:
-				.db			$25, $55, $55, $15, $15, $15, $04, $51		; ??
-				.db			$11, $11, $04, $44, $11, $04, $10, $41		; ??
-				.db			$04, $10, $41, $01, $01, $04, $04, $04		; ??
-				.db			$04, $04, $01, $01, $00, $40, $10, $04		; ??
-				.db			$01, $00, $40, $10, $01, $00, $10, $04		; ??
-				.db			$00, $40, $04, $00, $10, $01, $00, $10		; ??
-				.db			$00, $40, $01, $00, $10, $00, $40, $01		; ??
-				.db			$00, $01, $00, $04, $00, $10, $00, $40		; ??
+				.db			$25, $55, $55, $15, $15, $15, $04, $51		; 
+				.db			$11, $11, $04, $44, $11, $04, $10, $41		; 
+				.db			$04, $10, $41, $01, $01, $04, $04, $04		; 
+				.db			$04, $04, $01, $01, $00, $40, $10, $04		; 
+				.db			$01, $00, $40, $10, $01, $00, $10, $04		; 
+				.db			$00, $40, $04, $00, $10, $01, $00, $10		; 
+				.db			$00, $40, $01, $00, $10, $00, $40, $01		; 
+				.db			$00, $01, $00, $04, $00, $10, $00, $40		; 
 
-L1127:
 				;; $08 long table
-				.db			$7f, $79, $74, $70, $6b, $67, $64, $60		; ??
+				;; Unencoded -- 0, -7, 5, -4, -5, -4, -3, -4
+				;; Written $2245-$224c
+				;; Tight curve?
+L1127:
+				.db			$7f, $79, $74, $70, $6b, $67, $64, $60		;
 
-				;; $3E long table -- values subbed from 
+				;; $3E long table
+				;; Delta encoded negative values
+				;; Unpacked $224d-$2344
+				;; $fe = 11 11 11 10 = -3 -3 -3 -2 -> (60) 5d 5a 59 57
 L112F:
-				.db			$fe, $ee, $a6, $99, $65, $55, $55, $54		; ??
-				.db			$51, $45, $11, $11, $11, $04, $41, $04		; ??
-				.db			$10, $40, $41, $00, $40, $40, $10, $04		; ??
-				.db			$00, $40, $04, $00, $10, $00, $10, $00		; ??
-				.db			$10, $00, $01, $00, $00, $04, $00, $00		; ??
-				.db			$04, $00, $00, $00, $40, $00, $00, $00		; ??
-				.db			$10, $00, $00, $00, $00, $40, $00, $00		; ??
-				.db			$00, $00, $01, $00, $00, $00							; ??
+				.db			$fe, $ee, $a6, $99, $65, $55, $55, $54		;
+				.db			$51, $45, $11, $11, $11, $04, $41, $04		;
+				.db			$10, $40, $41, $00, $40, $40, $10, $04		;
+				.db			$00, $40, $04, $00, $10, $00, $10, $00		;
+				.db			$10, $00, $01, $00, $00, $04, $00, $00		;
+				.db			$04, $00, $00, $00, $40, $00, $00, $00		;
+				.db			$10, $00, $00, $00, $00, $40, $00, $00		;
+				.db			$00, $00, $01, $00, $00, $00							;
+
 
 				;; Table for $0862
+				;; $40 byte table for |$C0-$3F|
+				;; Translate steering position to delta?
 L116D:
 				.db			$81, $8f, $a2, $ad, $b5, $bb, $c0, $c4		; 
 				.db			$c8, $cb, $ce, $d0, $d3, $d5, $d7, $d9		; 
@@ -2562,10 +2745,11 @@ L116D:
 				.db			$ed, $ee, $ef, $f0, $f1, $f1, $f2, $f3		; 
 				.db			$f4, $f4, $f5, $f6, $f6, $f7, $f7, $f8		; 
 				.db			$f9, $f9, $fa, $fa, $fb, $fb, $fc, $fc		; 
-				.db			$fd, $fd, $fe, $fe, $ff, $ff, $ff, $ff		; 
-				.db			$ff																				; 
+				.db			$fd, $fd, $fe, $fe, $ff, $ff, $ff, $ff		;
+				
+				.db			$ff																				; Garbage?
 
-				;; Table
+				;; $80 byte Table
 L11AE:
 				.db			$01, $01, $01, $01, $01, $01, $01, $01		; 11x 01
 				.db			$01, $01, $01, $02, $02, $02, $02, $02		; 15x 02
@@ -2584,7 +2768,7 @@ L11AE:
 				.db			$3c, $3e, $41, $43, $46, $48, $4b, $4e		; 
 				.db			$51, $54, $57, $5a, $5c, $61, $64, $68		; 
 
-				;; Table for $0869
+				;; $11 byte table for $0869
 L122E:
 				.db			$00, $01, $13, $1e, $26, $2c, $31, $33		; 
 				.db			$35, $39, $3b, $3d, $3f, $41, $42, $43		; 
