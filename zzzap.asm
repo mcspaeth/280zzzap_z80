@@ -9,15 +9,15 @@
 				;; 2002					= ??
 				;; 2003					= ?? Index into $2245 table
 				;; 2004-2005		= ?? ($2000-2001) + offset stored here
-				;; 2006					= ??
-				;; 2007					= ??
-				;; 2008					= ??
+				;; 2006					= New pylon height
+				;; 2007					= New pylon width
+				;; 2008					= Value from $2245 table
 				;; 2009-200C		= PRNG?
 				;; 2020					= IN0 store for IRQ
 				;; 2021					= Coin flag?
 				;; 2022					= Game state (D7 set = do big gfx?)
 				
-				;; 2023					= 
+				;; 2023					= 00 = Attract, 01/02 = game play, 03 = extended time
 				
 				;; 2024					= Toggles $00/$01 in IRQ
 				;; 2025-2026		= Pointer to 5-byte tables for pylons
@@ -29,7 +29,7 @@
 				;; 202F					= Coins
 
 				;; 2032-2033		= Score in hex
-				;; 2034					= Counts down from 00
+				;; 2034					= Tick counter for ratings
 				;; 2035					= # of crashes
 
 				;; 4 bytes set together in $1037?
@@ -40,19 +40,20 @@
 				
 				;; 203A					= Steering value ($3F-$C0)
 				
-				;; 203B-203C		= Pointer?
+				;; 203B-203C		= Track location?
 				;; 203D-203E		= Score in BCD
 				;; 203F					= Countdown timer
 				;; 2040					= Countdown timer
-				;; 2041					= Countdown timer
+				;; 2041					= Countdown timer ($3C to $00 = 1 second)
 				;; 2042					= Game time
 				;; 2044					= Bonus time
 				;; 2045					= IN0 store (Inputs)
 				;; 2046					= IN1 store (Steering)
+				;; 2047-2048		= 
 				;; 2049-204A		= ?? (Coped from $2039, tested at $100f)
 
-				;; 9-byte structure?
-				;; 204B					= Down counter?
+				;; 9-byte structure for timed animation
+				;; 204B					= Down counter
 				;; 204C					= Adder for ($2054)
 				;; 204D-204E		= Pointer to next ($204B-$2053)
 
@@ -75,7 +76,7 @@
 				;; 205E					= Loc 3 string ( $3ca0 = 1 from bottom )
 				;; 205F					= Loc 4 string ( $3e80 =        bottom )
 
-				;; 2060-2061		= Pointer to pylon?
+				;; 2060-2061		= Pylon to update?
 				
 				;; 5-byte Pylon table
 				;; 0		= Width (0 = inactive);
@@ -794,14 +795,13 @@ L06E0:
 
 				;; Decrement $2143 timer, reset act on overflow
 				;; Only adjust speed every 4th cycle?
-				
-				ld			a,($213E)				; Speed in hex
+				ld			a,($213E)				; Current speed
 				ld			hl,$2143
 				dec			(hl)
 				jp			p,L076D					; Skip if no overflow
 
 				ld			(hl),$03
-				ld			hl,$213E				; Speed in hex
+				ld			hl,$213E				; Current speed
 				ld			a,(hl)
 				inc			hl							; hl = $213F
 				cp			(hl)
@@ -825,26 +825,28 @@ L0766:
 				
 L076B:
 				dec			hl							; hl = $213E
-				ld			(hl),a
+				ld			(hl),a					; Current speed
 
 L076D:
 				ld			e,a							; a = ($213E)
-				ld			d,$00
+				ld			d,$00						; de = (Current speed)
 				ld			hl,($2047)
 				ld			a,h
 				and			a
 				jp			z,L077C
+				
 				add			hl,de
-				ld			($2047),hl
+				ld			($2047),hl			; ($2049-4A) += current speed
 L077C:
 				ld			hl,($2049)
 				ld			a,h
 				and			a
 				jp			z,L0788
+				
 				add			hl,de
-				ld			($2049),hl
+				ld			($2049),hl			; ($2049-4A) += current speed
 
-				;; ($203B) +- ($213E)<<4
+				;; ($203B) += ($213E)<<4
 L0788:
 				ex			de,hl						; hl=($213E)
 				add			hl,hl						; hl=($213E)*$02
@@ -854,7 +856,7 @@ L0788:
 				ex			de,hl						; de=($213E)*$10
 				ld			hl,($203B)
 				add			hl,de
-				ld			($203B),hl
+				ld			($203B),hl			; ($203B-$203C) +- 16* current speed
 				
 				ld			a,h
 				cpl
@@ -864,7 +866,7 @@ L0788:
 				
 				ld			c,d							; What is d?
 				ld			d,$00
-				ld			a,($2037)
+				ld			a,($2037)				; Curve parameter
 				call		L085C
 				push		af
 				ld			a,b
@@ -872,19 +874,20 @@ L0788:
 				ld			a,($2022)				; Game state
 				xor			$03
 				jp			z,L0830
-				ld			a,($213E)
+				ld			a,($213E)				; Current speed
 				and			a
-				jp			z,L0830
-				ld			a,($2037)
+				jp			z,L0830					; Skip if stopped
+
+				ld			a,($2037)				; Curve parameter
 				ld			b,a
 				call		L0887						; Complement a if negative
 				rrca
 				rrca
 				rrca
-				and			$06
-				cpl
-				inc			a
-				add			a,$0B
+				and			$06							; |($2037)| >> 3				a=00/02/04/06
+				cpl											;												a=ff/fd/fb/f9
+				inc			a								; -|($2037)| >> 3				a=00/fd/fc/fa
+				add			a,$0B						; $0b - |($2037)| >> 3	a=0b/09/07/05
 				cp			c
 				jp			nc,L07E8
 				
@@ -909,7 +912,7 @@ L0788:
 				jp			L07FF
 				
 L07E8:
-				xor			a
+				xor			a								; a=0
 				ld			($2141),a
 				ld			a,c
 				rrca
@@ -951,7 +954,7 @@ L0822:
 				call		L0887						; Complement a if negative
 				cp			$28
 				ld			a,h
-				adc			a,a
+				adc			a,a							; Carry from cp $28
 				ld			($2140),a
 				jp			L0831						; Why not push af? 
 
@@ -1109,7 +1112,7 @@ L08EF:
 				ld			hl,($2060)
 				ld			a,h
 				or			l
-				ret			z								; Nothing to do
+				ret			z								; Pointer clear = Nothing to do
 				
 				ld			a,$05
 				out			($04),a					; MB14241 Count
@@ -1141,13 +1144,13 @@ L090D:
 				jp			p,L092B					; a>0, get l from $11AE table
 
 				cp			$EE
-				jp			nc,L0926
+				jp			nc,L0926				; a>=$EE
 
-				;; a = ($EE-$FF) --> l=0
+				;; a = ($80-$ED) --> l=0
 				ld			l,b							; l=b=0
 				jp			L0931
 
-				;; a = ($80-$ED) --> l=1
+				;; a = ($EE-$FF) --> l=1
 L0926:
 				ld			l,$01
 				jp			L0931
@@ -1188,83 +1191,94 @@ L093F:
 				ld			d,a
 				ld			a,(hl)
 				ld			hl,$2006
-				rrca
+				rrca										; 07654321
 				and			$7F
 				ld			e,a
-				rrca
+				rrca										; 10765432
 				and			$1F
-				ld			(hl),a
-				inc			hl
-				rrca
-				rrca
+				ld			(hl),a					; $2006
+				inc			hl							; $2007
+				rrca										; 21076543
+				rrca										; 32107654
 				and			$07
 				ld			c,a
 				inc			a
-				ld			(hl),a
+				ld			(hl),a					; $2007
 				ld			a,d
 				ld			d,b
 				add			a,e
 				ld			e,a
 				push		de
+
 				ld			hl,($2004)
 				add			hl,de
 				push		hl
 				add			hl,bc
 				ld			a,h
 				pop			hl
-				call		L098D
+				call		L098D						; Write pylon data
+				
 				pop			de
+				;; de = -de
 				xor			a
 				sub			e
 				ld			e,a
 				ld			a,$00
 				sbc			a,d
 				ld			d,a
+
+				;; bc = -bc
 				xor			a
 				sub			c
 				ld			c,a
 				ld			a,$00
 				sbc			a,b
 				ld			b,a
+				
 				ld			hl,($2004)
 				add			hl,bc
 				add			hl,de
 				ld			a,h
+
+				;; Store calculated pylon data (if a!=0)
 L098D:
 				and			a
-				jp			nz,L09BC
+				jp			nz,L09BC				; Pylon offscreen?
+				
 				ex			de,hl
-				ld			hl,($2060)
+				ld			hl,($2060)			; Get pylon update pointer
 				ld			a,($2007)
-				ld			(hl),a
-				inc			hl
+				ld			(hl),a					; +0 = Store width
+				inc			hl							; +1
 				ld			a,($2006)
-				ld			(hl),a
-				inc			hl
+				ld			(hl),a					; +1 = Store height
+				inc			hl							; +2
 				ld			a,e
 				out			($03),a					; MB14241 Data
 				and			$07
-				ld			(hl),a
-				inc			hl
+				ld			(hl),a					; +2 = Store shift
+				inc			hl							; +3
 				ld			a,($2008)
 				out			($03),a					; MB14241 Data
 				in			a,($03)					; MB14241 Result
-				ld			(hl),a
-				inc			hl
+				ld			(hl),a					; +3 = screen loc low
+				inc			hl							; +4
 				xor			a
 				out			($03),a					; MB14241 Data
 				in			a,($03)					; MB14241 Result
 				add			a,$24
-				ld			(hl),a
+				ld			(hl),a					; +4 = screen lo high
 				inc			hl
-				ld			($2060),hl
+				ld			($2060),hl			; Store pylon update pointer
 				ret
+
+				;; Clear pylon if offscreen
 L09BC:
-				ld			hl,($2060)
-				ld			(hl),$00
-				ld			de,$0005
+				ld			hl,($2060)			; Get pylon update pointer
+				ld			(hl),$00				; Clear pylon
+				ld			de,$0005				; Pylon increment
 				add			hl,de
-				ld			($2060),hl
+				ld			($2060),hl			; Store pylon update pointer
 				ret
 
 
@@ -1685,21 +1699,23 @@ L0B80:
 
 				ld			a,($2023)
 				and			a
-				jp			z,L0C2A					; Skip if 0
+				jp			z,L0C2A					; (In attract mode)
 
 				;; No coin or not enough credits for game
 L0BB8:
 				call		L100F
 				ld			a,($2023)
 				and			a
-				jp			z,L0C21
+				jp			z,L0C21					; (In attract mode)
 
 				ld			hl,$2041
 				ld			a,(hl)
 				and			a
-				jp			nz,L0C12
-				ld			(hl),$3C
-				ld			hl,$2034
+				jp			nz,L0C12				; 
+				ld			(hl),$3C				; Reset to d60
+
+				;; (This happens once a second)
+				ld			hl,$2034				; Tick counter for ratings
 				dec			(hl)
 				
 				;; Decrement game time
@@ -1708,12 +1724,12 @@ L0BB8:
 				add			a,$99						; Decrement
 				daa
 				ld			(hl),a					; Store
-				jp			nz,L0C0F
+				jp			nz,L0C0F				; Game timer not zero
 
-				;; Game over?
+				;; Game timer zero
 				ld			a,($2023)
 				xor			$03
-				jp			z,L0DB6					; Already did extended time = Game over
+				jp			z,L0DB6					; Already did extended time = Don't calculate
 
 				in			a,($02)					; IN2
 				rrca										; 07654321
@@ -1844,9 +1860,10 @@ L0C95:
 				inc			hl
 				or			(hl)
 				jp			z,L0CB0
-				ld			a,($213E)
+				ld			a,($213E)				; Current speed
 				and			a
-				jp			z,L0CB0
+				jp			z,L0CB0					; Skip if stopped
+				
 				call		L0F33						; Write data and timer for audio
 				.db			$04, $00				; Data for $0F33
 
@@ -1904,9 +1921,9 @@ L0CEE:
 				rrca
 				rrca
 				rrca
-				rrca
+				rrca										; |($2037)| >> 4
 				and			$03							; String $00-$03
-				add			a,$10						; Loc $01
+				add			a,$10						; Loc $00, (Max curve string)
 				call		L0F48						; Rewrite top of screen
 
 				ld			a,($2045)
@@ -1920,7 +1937,7 @@ L0CEE:
 				ld			c,a
 				ld			a,b
 				and			$10
-				ld			a,($213E)
+				ld			a,($213E)				; Current speed
 				jp			z,L0D39
 				cp			$28
 				jp			nc,L0D27
@@ -1991,7 +2008,7 @@ L0D71:
 
 				;; Update speedometer gauge (if needed)
 L0D77:
-				ld			a,($213E)
+				ld			a,($213E)				; Current speed
 
 				;; Do some funny math
 				ld			b,a
@@ -2046,13 +2063,13 @@ L0DAD:
 				jp			nz,L0DAD
 				ret
 
-
+				;; Game Over
 L0DB6:													
 				ld			sp,$2400				; Reset stack pointer
 				ld			a,$04
 				ld			($2022),a				; Game state
 				call		L0E4B
-				ld			($2023),a
+				ld			($2023),a				; a=0 from L0E4B
 				call		L0FF1						; Update time
 
 				call		L0F44
